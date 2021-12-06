@@ -1,0 +1,4 @@
+Ctrl+B to switch panes
+Ctrl+X to exit nano (left pane)
+Ctrl+Q to exit less (right pane)
+

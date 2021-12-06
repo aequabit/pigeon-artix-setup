@@ -1,0 +1,10 @@
+GRUB configuration (/etc/default/grub):
+
+Remember selection in GRUB menu:
+  GRUB_DEFAULT=saved
+  GRUB_SAVEDEFAULT=true
+
+Change colors:
+  GRUB_COLOR_NORMAL="red/black"
+  GRUB_COLOR_HIGHLIGHT="light-gray/red"
+
