@@ -166,6 +166,10 @@ pacman-key --populate archlinux
 # Enable the lib32 repository
 sed -i "/\[lib32\]/,/Include/"'s/^#//' /etc/pacman.conf
 
+# Place favorable mirrors at the top
+sed -i "s/## Europe/Server = https:\/\/ftp.ludd.ltu.se\/mirrors\/artix\/\$repo\/os\/\$arch\nServer = https:\/\/mirror.pascalpuffke.de\/artix-linux\/\$repo\/os\/\$arch\n\n## Worldwide/g" /etc/pacman.d/mirrorlist
+sed -i "s/## Worldwide/Server = http:\/\/ftp.halifax.rwth-aachen.de\/archlinux\/\$repo\/os\/\$arch\nServer = http:\/\/ftp.u-strasbg.fr\/linux\/distributions\/archlinux\/\$repo\/os\/\$arch\n\n## Worldwide/g" /etc/pacman.d/mirrorlist-arch
+
 # Update repositories
 pacman -Sy
 
@@ -184,7 +188,7 @@ elif [ "${ARTIX_GFX_VENDOR}" = "amd" ]; then
 fi
 
 # Install elogind, SDDM and KDE
-pacman -S --noconfirm -q elogind elogind-openrc sddm-openrc sddm plasma plasma-nm ttf-dejavu ttf-liberation
+pacman -S --noconfirm -q elogind elogind-openrc sddm sddm-openrc plasma plasma-nm ttf-dejavu ttf-liberation
 rc-update add elogind
 rc-update add sddm
 

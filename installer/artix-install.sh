@@ -123,7 +123,7 @@ mount "${ARTIX_DISK_EFI}" /mnt/boot/efi
 pacman -Sy
 
 # Bootstrap the base system
-basestrap /mnt base base-devel openrc elogind-openrc \
+basestrap /mnt base base-devel openrc \
     linux-zen linux-zen-headers linux-firmware \
     cryptsetup cryptsetup-openrc lvm2 lvm2-openrc \
     sudo wget curl nano grub os-prober efibootmgr dosfstools freetype2 fuse2 gptfdisk libisoburn mtools os-prober \

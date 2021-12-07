@@ -1,5 +1,0 @@
-- create boot+efi+root+home images
-- sort everything
-- extract configuration
-- package list
-- openrc replacements
