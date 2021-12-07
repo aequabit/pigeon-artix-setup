@@ -10,60 +10,27 @@ rm -f /luks-passphrase
 pacman -Sy
 
 # Create LUKS keyfile
+#  TODO: Could be done outside of chroot, making /luks-passphrase obsolete
 dd if=/dev/random of=/crypto_keyfile.bin bs=512 count=8 iflag=fullblock
 chmod 000 /crypto_keyfile.bin
 sed -i "s/FILES=(/FILES=(\/crypto_keyfile.bin/g" /etc/mkinitcpio.conf
 echo -n "${ARTIX_LUKS_PASSPHRASE}" | cryptsetup luksAddKey "${ARTIX_DISK_LVM}" /crypto_keyfile.bin -
 
-# # Enable NOPASSWD for nobody
-# printf 'nobody ALL=(ALL) NOPASSWD: ALL\n' | tee -a /etc/sudoers
-
-# # Install grub-git from the AUR (fixes boot from LUKS2-encrypted partitions)
-# sudo -u nobody git clone https://aur.archlinux.org/grub-git.git /tmp/grub-git
-# cd /tmp/grub-git
-# sudo -u nobody makepkg -si --noconfirm
-
-# # Create backup of package
-# cp /tmp/grub-git/grub-git-*.pkg.tar.zst /root
-
-# # Disable NOPASSWD for nobody
-# sed -i "s/nobody ALL=(ALL) NOPASSWD: ALL//g" /etc/sudoers
-
 # TODO: VFIO setup
 
-# Fix for issue at end of post: https://forum.artixlinux.org/index.php/topic,1541.msg10698.html#msg10698
+# Remove Artix GRUB theme
+#  Fixes issue at end of post: https://forum.artixlinux.org/index.php/topic,1541.msg10698.html#msg10698
 pacman -Rc --noconfirm artix-grub-theme
 
-# Update initramfs
+# Enable initramfs hooks
 sed -i "s/block filesystems/block keyboard keymap encrypt lvm2 resume filesystems/g" /etc/mkinitcpio.conf
 mkinitcpio -P
 
 LVM_PARTITION_UUID=$(blkid -s UUID -o value "${ARTIX_DISK_LVM}")
 
-# LUKS2 workaround - doesn't seem to work
-# # Fix for issue at end of post: https://forum.artixlinux.org/index.php/topic,1541.msg10698.html#msg10698
-# cat <<EOT > /root/grub-pre.cfg
-# set crypto_uuid=${LVM_PARTITION_UUID}
-# cryptomount -u \$crypto_uuid
-# set root=cryptouuid/\$crypto_uuid
-# set prefix=(\$root)/boot/grub
-# insmod normal
-# normal
-# EOT
-
-# cat <<EOT > /root/update-grub.sh
-# grub-mkconfig -o /boot/grub/grub.cfg
-# grub-mkimage -p /boot/grub -O x86_64-efi -c /root/grub-pre.cfg -o /tmp/grubx64.efi luks2 part_gpt cryptodisk gcry_rijndael pbkdf2 gcry_sha256 ext2 lvm
-# install -v /tmp/grubx64.efi /boot/efi/EFI/BOOT/BOOTX64.EFI
-# EOT
-
-# chmod +x /root/update-grub.sh
-# /root/update-grub.sh
-
 # Set kernel commandline
-# TODO: Optimize swap-specific options
+#  TODO: Optimize swap-specific options
 if [ "${ARTIX_SWAP_SIZE_GB}" != "0" ]; then
-    # FIXME: Fails
     sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${LVM_PARTITION_UUID}:vg0 root=\/dev\/vg0\/lv-root resume=\/dev\/vg0\/lv-swap\"/g" /etc/default/grub
 else
     sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${LVM_PARTITION_UUID}:vg0 root=\/dev\/vg0\/lv-root\"/g" /etc/default/grub
@@ -73,23 +40,24 @@ fi
 sed -i "s/#GRUB_ENABLE_CRYPTODISK/GRUB_ENABLE_CRYPTODISK/g" /etc/default/grub
 
 # Remember last GRUB selection
-# Breaks when boot partition in LVM: https://bugs.launchpad.net/ubuntu/+source/grub2/+bug/1274320
+#  Breaks when boot partition in LVM: https://bugs.launchpad.net/ubuntu/+source/grub2/+bug/1274320
 # sed -i "s/GRUB_DEFAULT=0/GRUB_DEFAULT=saved/g" /etc/default/grub
 # sed -i "s/#GRUB_SAVEDEFAULT=true/GRUB_SAVEDEFAULT=true/g" /etc/default/grub
 
-# Escape GRUB colors
+# Escape and set GRUB colors
 GRUB_COLOR_NORMAL=$(printf '%s\n' "$ARTIX_GRUB_COLOR_NORMAL" | sed -e 's/[\/&]/\\&/g')
 GRUB_COLOR_HIGHLIGHT=$(printf '%s\n' "$ARTIX_GRUB_COLOR_HIGHLIGHT" | sed -e 's/[\/&]/\\&/g')
-
-# Change GRUB colors
 sed -i "s/#GRUB_COLOR_NORMAL=\"light-blue\/black\"/GRUB_COLOR_NORMAL=\"${GRUB_COLOR_NORMAL}\"/g" /etc/default/grub
 sed -i "s/#GRUB_COLOR_HIGHLIGHT=\"light-cyan\/blue\"/GRUB_COLOR_HIGHLIGHT=\"${GRUB_COLOR_HIGHLIGHT}\"/g" /etc/default/grub
 
+# Enable wheel group permissions
 sed -i "s/# %wheel ALL=(ALL) ALL/%wheel ALL=(ALL) ALL/g" /etc/sudoers
 
 # Install GRUB 
 if [ "${ARTIX_LEGACY}" != "0" ]; then
-    grub-install --target=i386-pc --boot-directory=/boot --bootloader-id="${ARTIX_BOOTLOADER_ID}" --recheck "${ARTIX_DISK}"
+    echo "legacy boot currently unsupported"
+    exit 1
+    # grub-install --target=i386-pc --boot-directory=/boot --bootloader-id="${ARTIX_BOOTLOADER_ID}" --recheck "${ARTIX_DISK}"
 else
     grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="${ARTIX_BOOTLOADER_ID}" --removable --recheck "${ARTIX_DISK}"
 fi
@@ -99,11 +67,11 @@ grub-mkconfig -o /boot/grub/grub.cfg
 
 # Set root password
 usermod -s "/bin/${ARTIX_USER_SHELL}" root
-echo "root:${ARTIX_ROOT_PASSWORD}" | chpasswd
+echo -e "${ARTIX_ROOT_PASSWORD}\n${ARTIX_ROOT_PASSWORD}" | passwd root
 
 # Create user and set password
 useradd -m -G "${ARTIX_USER_GROUPS}" -s "/bin/${ARTIX_USER_SHELL}" "${ARTIX_USER}"
-echo "${ARTIX_USER}:${ARTIX_USER_PASSWORD}" | chpasswd
+echo -e "${ARTIX_USER_PASSWORD}\n${ARTIX_USER_PASSWORD}" | passwd "${ARTIX_USER}"
 
 # Set keymap
 echo "keymap=${ARTIX_KEYMAP}" > /etc/conf.d/keymaps
@@ -113,7 +81,7 @@ echo "KEYMAP=${ARTIX_KEYMAP}" > /etc/vconsole.conf
 ln -sf "/usr/share/zoneinfo/${ARTIX_TIMEZONE}" /etc/localtime
 hwclock --systohc
 
-# Generate locales
+# Set locales
 locale-gen
 printf "LANG=en_US.UTF-8\nLC_COLLATE=C\n" > /etc/locale.conf
 
@@ -147,9 +115,10 @@ echo "blacklist pcspkr" > /etc/modprobe.d/nobeep.conf
 # Enable pacman colors
 sed -i "s/#Color/Color/g" /etc/pacman.conf
 
-# Add support for Arch packages
+# Install support for Arch packages
 pacman -S --noconfirm -q artix-archlinux-support
 
+# Enable Arch package mirrors
 echo "
 [extra]
 Include = /etc/pacman.d/mirrorlist-arch
@@ -161,6 +130,7 @@ Include = /etc/pacman.d/mirrorlist-arch
 Include = /etc/pacman.d/mirrorlist-arch
 " >> /etc/pacman.conf
 
+# Import Arch package keys
 pacman-key --populate archlinux
 
 # Enable the lib32 repository
@@ -173,7 +143,7 @@ sed -i "s/## Worldwide/Server = http:\/\/ftp.halifax.rwth-aachen.de\/archlinux\/
 # Update repositories
 pacman -Sy
 
-# Install X
+# Install necessary X packages
 pacman -S --noconfirm -q xorg-server xorg-apps xorg-xinit
 
 # Install vendor-specific graphics packages
@@ -183,8 +153,8 @@ elif [ "${ARTIX_GFX_VENDOR}" = "nvidia" ]; then
     pacman -S --noconfirm -q nvidia-utils-openrc nvidia-utils nvidia-dkms \
         lib32-nvidia-utils lib32-nvidia-libgl nvidia-settings
 elif [ "${ARTIX_GFX_VENDOR}" = "amd" ]; then
-    echo 1
-    # TODO: AMD packages
+    # TODO: AMD graphics packages
+    echo "currently no amd gfx support"
 fi
 
 # Install elogind, SDDM and KDE
@@ -217,4 +187,18 @@ pacman -Sy ungoogled-chromium
 # TODO: Custom user-dirs
 
 # TODO: Install AUR packages to ~/pkg
-# yay lightly-qt
+#  yay lightly-qt
+
+# # Enable NOPASSWD for nobody
+# printf 'nobody ALL=(ALL) NOPASSWD: ALL\n' | tee -a /etc/sudoers
+
+# # Install grub-git from the AUR (fixes boot from LUKS2-encrypted partitions)
+# sudo -u nobody git clone https://aur.archlinux.org/grub-git.git /tmp/grub-git
+# cd /tmp/grub-git
+# sudo -u nobody makepkg -si --noconfirm
+
+# # Create backup of package
+# cp /tmp/grub-git/grub-git-*.pkg.tar.zst /root
+
+# # Disable NOPASSWD for nobody
+# sed -i "s/nobody ALL=(ALL) NOPASSWD: ALL//g" /etc/sudoers
