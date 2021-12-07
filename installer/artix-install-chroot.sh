@@ -5,44 +5,65 @@ source /root/artix-install-config.sh
 # Update repositories
 pacman -Sy
 
-# Set keymap
-sed -r "s/(keymap *= *\").*/\1${ARTIX_KEYMAP}1\"/" /etc/conf.d/keymaps > /etc/conf.d/keymaps
-sed -r "s/(KEYMAP *= *).*/\1${ARTIX_KEYMAP}/" /etc/vconsole.conf > /etc/vconsole.conf
+# # Enable NOPASSWD for nobody
+# printf 'nobody ALL=(ALL) NOPASSWD: ALL\n' | tee -a /etc/sudoers
 
-# Set timezone
-ln -sf "/usr/share/zoneinfo/${ARTIX_TIMEZONE}" /etc/localtime
-hwclock --systohc
+# # Install grub-git from the AUR (fixes boot from LUKS2-encrypted partitions)
+# sudo -u nobody git clone https://aur.archlinux.org/grub-git.git /tmp/grub-git
+# cd /tmp/grub-git
+# sudo -u nobody makepkg -si --noconfirm
 
-# Generate locales
-locale-gen
-echo 'LC_COLLATE="C"' >> /etc/locale.conf
+# # Create backup of package
+# cp /tmp/grub-git/grub-git-*.pkg.tar.zst /root
+
+# # Disable NOPASSWD for nobody
+# sed -i "s/nobody ALL=(ALL) NOPASSWD: ALL//g" /etc/sudoers
 
 # TODO: VFIO setup
 
 # Fix for issue at end of post: https://forum.artixlinux.org/index.php/topic,1541.msg10698.html#msg10698
-pacman -Rc --noconfirm -y artix-grub-theme
+pacman -Rc --noconfirm artix-grub-theme
 
 # Update initramfs
-sed -i "s/block filesystems/block keymap encrypt lvm2 resume filesystems/g" /etc/mkinitcpio.conf
+sed -i "s/block filesystems/block keyboard keymap encrypt lvm2 resume filesystems/g" /etc/mkinitcpio.conf
 mkinitcpio -P
 
-# Install GRUB
+# Install GRUB 
 if [ "${ARTIX_LEGACY}" != "0" ]; then
-    grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="${ARTIX_BOOTLOADER_ID}" --removable --recheck --debug "${ARTIX_DISK}"
+    grub-install --target=i386-pc --boot-directory=/boot --bootloader-id="${ARTIX_BOOTLOADER_ID}" --recheck "${ARTIX_DISK}"
 else
-    echo 1
-    # TODO: BIOS install
+    grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="${ARTIX_BOOTLOADER_ID}" --removable --recheck "${ARTIX_DISK}"
 fi
+
+LVM_PARTITION_UUID=$(blkid -s UUID -o value "${ARTIX_DISK_LVM}")
+
+# LUKS2 workaround - doesn't seem to work
+# # Fix for issue at end of post: https://forum.artixlinux.org/index.php/topic,1541.msg10698.html#msg10698
+# cat <<EOT > /root/grub-pre.cfg
+# set crypto_uuid=${LVM_PARTITION_UUID}
+# cryptomount -u \$crypto_uuid
+# set root=cryptouuid/\$crypto_uuid
+# set prefix=(\$root)/boot/grub
+# insmod normal
+# normal
+# EOT
+
+# cat <<EOT > /root/update-grub.sh
+# grub-mkconfig -o /boot/grub/grub.cfg
+# grub-mkimage -p /boot/grub -O x86_64-efi -c /root/grub-pre.cfg -o /tmp/grubx64.efi luks2 part_gpt cryptodisk gcry_rijndael pbkdf2 gcry_sha256 ext2 lvm
+# install -v /tmp/grubx64.efi /boot/efi/EFI/BOOT/BOOTX64.EFI
+# EOT
+
+# chmod +x /root/update-grub.sh
+# /root/update-grub.sh
 
 # Set kernel commandline
 # TODO: Optimize swap-specific options
 if [ "${ARTIX_SWAP_SIZE_GB}" != "0" ]; then
-    # TODO: Specify device via UUID instead of device path (  )
     # FIXME: Fails
-    LVM_PARTITION_UUID=$(blkid -s UUID -o value "${ARTIX_DISK_LVM}")
-    sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${LVM_PARTITION_UUID}:vg0 root=\/dev\/mapper\/vg0-lv-root resume=\/dev\/mapper\/vg0-lv-swap\"/g" /etc/default/grub
+    sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${LVM_PARTITION_UUID}:vg0 root=\/dev\/vg0\/lv-root resume=\/dev\/vg0\/lv-swap\"/g" /etc/default/grub
 else
-    sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${LVM_PARTITION_UUID}:vg0 root=\/dev\/mapper\/vg0-lv-root\"/g" /etc/default/grub
+    sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${LVM_PARTITION_UUID}:vg0 root=\/dev\/vg0\/lv-root\"/g" /etc/default/grub
 fi
 
 # Enable LVM support for GRUB
@@ -52,9 +73,13 @@ sed -i "s/#GRUB_ENABLE_CRYPTODISK/GRUB_ENABLE_CRYPTODISK/g" /etc/default/grub
 sed -i "s/GRUB_DEFAULT=0/GRUB_DEFAULT=saved/g" /etc/default/grub
 sed -i "s/#GRUB_SAVEDEFAULT=true/GRUB_SAVEDEFAULT=true/g" /etc/default/grub
 
+# Escape GRUB colors
+GRUB_COLOR_NORMAL=$(printf '%s\n' "$ARTIX_GRUB_COLOR_NORMAL" | sed -e 's/[\/&]/\\&/g')
+GRUB_COLOR_HIGHLIGHT=$(printf '%s\n' "$ARTIX_GRUB_COLOR_HIGHLIGHT" | sed -e 's/[\/&]/\\&/g')
+
 # Change GRUB colors
-sed -i "s/#GRUB_COLOR_NORMAL=\"light-blue/black\"/GRUB_COLOR_NORMAL=\"${ARTIX_GRUB_COLOR}\"/g" /etc/default/grub
-sed -i "s/#GRUB_COLOR_HIGHLIGHT=\"light-cyan/blue\"/GRUB_COLOR_HIGHLIGHT=\"${ARTIX_GRUB_COLOR_HIGHLIGHT}\"/g" /etc/default/grub
+sed -i "s/#GRUB_COLOR_NORMAL=\"light-blue\/black\"/GRUB_COLOR_NORMAL=\"${GRUB_COLOR_NORMAL}\"/g" /etc/default/grub
+sed -i "s/#GRUB_COLOR_HIGHLIGHT=\"light-cyan\/blue\"/GRUB_COLOR_HIGHLIGHT=\"${GRUB_COLOR_HIGHLIGHT}\"/g" /etc/default/grub
 
 # Create GRUB config
 grub-mkconfig -o /boot/grub/grub.cfg
@@ -66,6 +91,18 @@ echo "root:${ARTIX_ROOT_PASSWORD}" | chpasswd
 # Create user and set password
 useradd -m "${ARTIX_USER}" -G "${ARTIX_USER_GROUPS}" -s "/bin/${ARTIX_USER_SHELL}"
 echo "${ARTIX_USER}:${ARTIX_USER_PASSWORD}" | chpasswd
+
+# Set keymap
+sed -r "s/(keymap *= *\").*/\1${ARTIX_KEYMAP}1\"/" /etc/conf.d/keymaps > /etc/conf.d/keymaps
+sed -r "s/(KEYMAP *= *).*/\1${ARTIX_KEYMAP}/" /etc/vconsole.conf > /etc/vconsole.conf
+
+# Set timezone
+ln -sf "/usr/share/zoneinfo/${ARTIX_TIMEZONE}" /etc/localtime
+hwclock --systohc
+
+# Generate locales
+locale-gen
+echo 'LC_COLLATE="C"' >> /etc/locale.conf
 
 # Set hostname
 echo "${ARTIX_HOSTNAME}" > /etc/hostname
@@ -142,5 +179,5 @@ rc-update add sddm
 #     kwrite markdownpart partitionmanager svgpart sweeper umbrello
 
 # Install additional tools
-# pacman -S --noconfirm -q git wget code discord teamspeak3 telegram-desktop \
+# pacman -S --noconfirm -q wget code discord teamspeak3 telegram-desktop \
 #     qbittorrent obs-studio qemu libvirt virt-manager gnome-clocks "${ARTIX_USER_SHELL}"

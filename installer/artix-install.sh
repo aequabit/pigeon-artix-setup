@@ -62,7 +62,7 @@ fi
     echo 30    # Linux LVM
 
     echo n # Create EFI partition
-    echo 2 # Partition 1
+    echo 2 # Partition 2
     echo   # Confirm default (end of last partition)
     echo   # Confirm default (rest of disk)
     echo Y # Confirm signature removal (ignored if not present)
@@ -74,11 +74,13 @@ fi
 ) | fdisk "${ARTIX_DISK}"
 
 # Format EFI partition
-mkfs.fat -F32 "${ARTIX_DISK_EFI}"
-fatlabel "${ARTIX_DISK_EFI}" PTEFI
+mkfs.fat -n PTEFI -F32 "${ARTIX_DISK_EFI}"
 
 # Format LVM partition
-echo -n "${ARTIX_LUKS_PASSPHRASE}" | cryptsetup luksFormat --cipher aes-xts-plain64 --use-random "${ARTIX_DISK_LVM}" --batch-mode -
+# LUKS1 is required, see this:
+#  https://wiki.archlinux.org/title/GRUB#Encrypted_/boot
+#  https://savannah.gnu.org/bugs/?55093
+echo -n "${ARTIX_LUKS_PASSPHRASE}" | cryptsetup luksFormat --type=luks1 --cipher aes-xts-plain64 --use-random "${ARTIX_DISK_LVM}" --batch-mode -
 echo -n "${ARTIX_LUKS_PASSPHRASE}" | cryptsetup luksOpen "${ARTIX_DISK_LVM}" lvm -
 
 # Create LVM volumes
@@ -92,14 +94,14 @@ LV_SWAP_SIZE_BYTES=$(echo "$ARTIX_SWAP_SIZE_GB * 1024 * 1024 * 1024" | bc)
 LV_HOME_SIZE_BYTES=$(echo "$PV_CAPACITY_BYTES - $LV_ROOT_SIZE_BYTES - $LV_SWAP_SIZE_BYTES" | bc);
 
 # Create logical volumes
-lvcreate --size "${LV_HOME_SIZE_BYTES}B" vg0 --name lv-home
-lvcreate --size "${LV_ROOT_SIZE_BYTES}B" vg0 --name lv-root
+lvcreate --name lv-home --size "${LV_HOME_SIZE_BYTES}B" vg0
+lvcreate --name lv-root --size "${LV_ROOT_SIZE_BYTES}B" vg0
 
 # Create and format swap if size is not zero
 if [ "${ARTIX_SWAP_SIZE_GB}" != "0" ]; then
     lvcreate --size "${LV_SWAP_SIZE_BYTES}B" vg0 --name lv-swap
     mkswap -L pt-swap /dev/vg0/lv-swap
-    swapon /dev/mapper/vg0-swap
+    swapon /dev/vg0/lv-swap
 fi
 
 # Format logical volumes
@@ -109,9 +111,10 @@ mkfs.ext4 -L pt-home /dev/vg0/lv-home
 # Mount the new system
 mount /dev/vg0/lv-root /mnt
 
-mkdir /mnt/boot /mnt/boot/efi /mnt/home
+mkdir /mnt/boot /mnt/home
 
 # Mount EFI partition
+mkdir /mnt/boot/efi
 mount "${ARTIX_DISK_EFI}" /mnt/boot/efi
 
 # Update pacman repositories
@@ -120,7 +123,8 @@ pacman -Sy
 # Bootstrap the base system
 basestrap /mnt base base-devel openrc elogind-openrc \
     linux-zen linux-zen-headers linux-firmware \
-    cryptsetup cryptsetup-openrc lvm2 lvm2-openrc grub os-prober efibootmgr \
+    cryptsetup cryptsetup-openrc lvm2 lvm2-openrc \
+    nano grub os-prober efibootmgr dosfstools freetype2 fuse2 gptfdisk libisoburn mtools os-prober \
     "${ARTIX_VENDOR}-ucode"
 
 fstabgen -U /mnt >> /mnt/etc/fstab

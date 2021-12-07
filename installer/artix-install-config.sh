@@ -5,10 +5,9 @@ ARTIX_KEYMAP="de-latin1"
 ARTIX_TIMEZONE="Europe/Berlin"
 ARTIX_VENDOR="intel" # intel, amd
 ARTIX_GFX_VENDOR="intel" # intel, nvidia, amd
-ARTIX_LEGACY=0
-ARTIX_BOOTLOADER_ID="pigeon-artix"
-ARTIX_GRUB_COLOR="red/black"
-ARTIX_GRUB_COLOR="red/black"
+ARTIX_LEGACY=0 # not implemented yet
+ARTIX_BOOTLOADER_ID="pigeon_artix"
+ARTIX_GRUB_COLOR_NORMAL="red/black"
 ARTIX_GRUB_COLOR_HIGHLIGHT="light-gray/red"
 
 ARTIX_HOSTNAME="artix"
