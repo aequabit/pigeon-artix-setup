@@ -2,8 +2,6 @@
 
 # TODO: Keep hashes of config files, scan before 
 
-# TODO: AMD-specific steps (amd-ucode etc.)
-
 function read_password() {
   stty -echo
   printf "${1}"
@@ -68,7 +66,7 @@ fi
     echo Y # Confirm signature removal (ignored if not present)
     echo t # Change type
     echo 2
-    echo 1 # EFI
+    echo 1 # EFI System
 
     echo w # Write changes
 ) | fdisk "${ARTIX_DISK}"
@@ -80,7 +78,7 @@ mkfs.fat -n PTEFI -F32 "${ARTIX_DISK_EFI}"
 # LUKS1 is required, see this:
 #  https://wiki.archlinux.org/title/GRUB#Encrypted_/boot
 #  https://savannah.gnu.org/bugs/?55093
-echo -n "${ARTIX_LUKS_PASSPHRASE}" | cryptsetup luksFormat --type=luks1 --cipher aes-xts-plain64 --use-random "${ARTIX_DISK_LVM}" --batch-mode -
+echo -n "${ARTIX_LUKS_PASSPHRASE}" | cryptsetup luksFormat --type luks1 --cipher aes-xts-plain64 --use-random "${ARTIX_DISK_LVM}" --batch-mode -
 echo -n "${ARTIX_LUKS_PASSPHRASE}" | cryptsetup luksOpen "${ARTIX_DISK_LVM}" lvm -
 
 # Create LVM volumes
@@ -108,10 +106,14 @@ fi
 mkfs.ext4 -L pt-root /dev/vg0/lv-root
 mkfs.ext4 -L pt-home /dev/vg0/lv-home
 
-# Mount the new system
+# Mount root volume
 mount /dev/vg0/lv-root /mnt
 
+# Create boot and home directories
 mkdir /mnt/boot /mnt/home
+
+# Mount home partition
+mount /dev/vg0/lv-home /mnt/home
 
 # Mount EFI partition
 mkdir /mnt/boot/efi
@@ -124,14 +126,23 @@ pacman -Sy
 basestrap /mnt base base-devel openrc elogind-openrc \
     linux-zen linux-zen-headers linux-firmware \
     cryptsetup cryptsetup-openrc lvm2 lvm2-openrc \
-    nano grub os-prober efibootmgr dosfstools freetype2 fuse2 gptfdisk libisoburn mtools os-prober \
-    "${ARTIX_VENDOR}-ucode"
+    sudo wget curl nano grub os-prober efibootmgr dosfstools freetype2 fuse2 gptfdisk libisoburn mtools os-prober \
+    "${ARTIX_USER_SHELL}" "${ARTIX_VENDOR}-ucode"
 
 fstabgen -U /mnt >> /mnt/etc/fstab
 
 cp /root/artix-install-config.sh /mnt/root
 cp /root/artix-install-chroot.sh /mnt/root
 
+# Save the LUKS passphrase temporarily for the chroot environment
+printf "${ARTIX_LUKS_PASSPHRASE}" > /mnt/luks-passphrase
+
 # Run the next stage inside the chroot environment
 artix-chroot /mnt /root/artix-install-chroot.sh
 # artix-chroot /mnt /bin/bash
+
+# Unmount all partitions
+umount -a
+
+# :^)
+reboot

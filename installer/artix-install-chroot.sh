@@ -2,8 +2,18 @@
 
 source /root/artix-install-config.sh
 
+# Read the passphrase and delete the temporary file
+ARTIX_LUKS_PASSPHRASE=$(cat /luks-passphrase)
+rm -f /luks-passphrase
+
 # Update repositories
 pacman -Sy
+
+# Create LUKS keyfile
+dd if=/dev/random of=/crypto_keyfile.bin bs=512 count=8 iflag=fullblock
+chmod 000 /crypto_keyfile.bin
+sed -i "s/FILES=(/FILES=(\/crypto_keyfile.bin/g" /etc/mkinitcpio.conf
+echo -n "${ARTIX_LUKS_PASSPHRASE}" | cryptsetup luksAddKey "${ARTIX_DISK_LVM}" /crypto_keyfile.bin -
 
 # # Enable NOPASSWD for nobody
 # printf 'nobody ALL=(ALL) NOPASSWD: ALL\n' | tee -a /etc/sudoers
@@ -27,13 +37,6 @@ pacman -Rc --noconfirm artix-grub-theme
 # Update initramfs
 sed -i "s/block filesystems/block keyboard keymap encrypt lvm2 resume filesystems/g" /etc/mkinitcpio.conf
 mkinitcpio -P
-
-# Install GRUB 
-if [ "${ARTIX_LEGACY}" != "0" ]; then
-    grub-install --target=i386-pc --boot-directory=/boot --bootloader-id="${ARTIX_BOOTLOADER_ID}" --recheck "${ARTIX_DISK}"
-else
-    grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="${ARTIX_BOOTLOADER_ID}" --removable --recheck "${ARTIX_DISK}"
-fi
 
 LVM_PARTITION_UUID=$(blkid -s UUID -o value "${ARTIX_DISK_LVM}")
 
@@ -70,8 +73,9 @@ fi
 sed -i "s/#GRUB_ENABLE_CRYPTODISK/GRUB_ENABLE_CRYPTODISK/g" /etc/default/grub
 
 # Remember last GRUB selection
-sed -i "s/GRUB_DEFAULT=0/GRUB_DEFAULT=saved/g" /etc/default/grub
-sed -i "s/#GRUB_SAVEDEFAULT=true/GRUB_SAVEDEFAULT=true/g" /etc/default/grub
+# Breaks when boot partition in LVM: https://bugs.launchpad.net/ubuntu/+source/grub2/+bug/1274320
+# sed -i "s/GRUB_DEFAULT=0/GRUB_DEFAULT=saved/g" /etc/default/grub
+# sed -i "s/#GRUB_SAVEDEFAULT=true/GRUB_SAVEDEFAULT=true/g" /etc/default/grub
 
 # Escape GRUB colors
 GRUB_COLOR_NORMAL=$(printf '%s\n' "$ARTIX_GRUB_COLOR_NORMAL" | sed -e 's/[\/&]/\\&/g')
@@ -81,6 +85,15 @@ GRUB_COLOR_HIGHLIGHT=$(printf '%s\n' "$ARTIX_GRUB_COLOR_HIGHLIGHT" | sed -e 's/[
 sed -i "s/#GRUB_COLOR_NORMAL=\"light-blue\/black\"/GRUB_COLOR_NORMAL=\"${GRUB_COLOR_NORMAL}\"/g" /etc/default/grub
 sed -i "s/#GRUB_COLOR_HIGHLIGHT=\"light-cyan\/blue\"/GRUB_COLOR_HIGHLIGHT=\"${GRUB_COLOR_HIGHLIGHT}\"/g" /etc/default/grub
 
+sed -i "s/# %wheel ALL=(ALL) ALL/%wheel ALL=(ALL) ALL/g" /etc/sudoers
+
+# Install GRUB 
+if [ "${ARTIX_LEGACY}" != "0" ]; then
+    grub-install --target=i386-pc --boot-directory=/boot --bootloader-id="${ARTIX_BOOTLOADER_ID}" --recheck "${ARTIX_DISK}"
+else
+    grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="${ARTIX_BOOTLOADER_ID}" --removable --recheck "${ARTIX_DISK}"
+fi
+
 # Create GRUB config
 grub-mkconfig -o /boot/grub/grub.cfg
 
@@ -89,12 +102,12 @@ usermod -s "/bin/${ARTIX_USER_SHELL}" root
 echo "root:${ARTIX_ROOT_PASSWORD}" | chpasswd
 
 # Create user and set password
-useradd -m "${ARTIX_USER}" -G "${ARTIX_USER_GROUPS}" -s "/bin/${ARTIX_USER_SHELL}"
+useradd -m -G "${ARTIX_USER_GROUPS}" -s "/bin/${ARTIX_USER_SHELL}" "${ARTIX_USER}"
 echo "${ARTIX_USER}:${ARTIX_USER_PASSWORD}" | chpasswd
 
 # Set keymap
-sed -r "s/(keymap *= *\").*/\1${ARTIX_KEYMAP}1\"/" /etc/conf.d/keymaps > /etc/conf.d/keymaps
-sed -r "s/(KEYMAP *= *).*/\1${ARTIX_KEYMAP}/" /etc/vconsole.conf > /etc/vconsole.conf
+echo "keymap=${ARTIX_KEYMAP}" > /etc/conf.d/keymaps
+echo "KEYMAP=${ARTIX_KEYMAP}" > /etc/vconsole.conf
 
 # Set timezone
 ln -sf "/usr/share/zoneinfo/${ARTIX_TIMEZONE}" /etc/localtime
@@ -102,7 +115,7 @@ hwclock --systohc
 
 # Generate locales
 locale-gen
-echo 'LC_COLLATE="C"' >> /etc/locale.conf
+printf "LANG=en_US.UTF-8\nLC_COLLATE=C\n" > /etc/locale.conf
 
 # Set hostname
 echo "${ARTIX_HOSTNAME}" > /etc/hostname
@@ -120,13 +133,16 @@ fi
 
 # Install networkmanager
 pacman -S --noconfirm -q networkmanager networkmanager-openrc networkmanager-openvpn network-manager-applet
-rc-update add NetworkManager
+rc-update add NetworkManager default
 
 # Install additional services
 pacman -S --noconfirm -q ntp ntp-openrc acpid acpid-openrc syslog-ng syslog-ng-openrc
 rc-update add ntpd default
 rc-update add acpid default
 rc-update add syslog-ng default
+
+# Disable beep
+echo "blacklist pcspkr" > /etc/modprobe.d/nobeep.conf
 
 # Enable pacman colors
 sed -i "s/#Color/Color/g" /etc/pacman.conf
@@ -142,15 +158,17 @@ Include = /etc/pacman.d/mirrorlist-arch
 Include = /etc/pacman.d/mirrorlist-arch
 
 [multilib]
-Include = /etc/pacman.d/mirrorlist-arch" >> /etc/pacman.conf
+Include = /etc/pacman.d/mirrorlist-arch
+" >> /etc/pacman.conf
 
 pacman-key --populate archlinux
+
+# Enable the lib32 repository
+sed -i "/\[lib32\]/,/Include/"'s/^#//' /etc/pacman.conf
 
 # Update repositories
 pacman -Sy
 
-echo "done!"
-exit 0
 # Install X
 pacman -S --noconfirm -q xorg-server xorg-apps xorg-xinit
 
@@ -178,6 +196,21 @@ rc-update add sddm
 #     kontact konversation kopete korganizer krdc ksystemlog ktouch kwalletmanager \
 #     kwrite markdownpart partitionmanager svgpart sweeper umbrello
 
-# Install additional tools
-# pacman -S --noconfirm -q wget code discord teamspeak3 telegram-desktop \
-#     qbittorrent obs-studio qemu libvirt virt-manager gnome-clocks "${ARTIX_USER_SHELL}"
+# Additional applications
+# pacman -S --noconfirm -q code discord teamspeak3 telegram-desktop \
+#     qbittorrent obs-studio qemu libvirt virt-manager gnome-clocks
+
+# Add ungoogled-chromium repository (https://github.com/ungoogled-software/ungoogled-chromium-archlinux)
+curl -s 'https://download.opensuse.org/repositories/home:/ungoogled_chromium/Arch/x86_64/home_ungoogled_chromium_Arch.key' | sudo pacman-key -a -
+echo '[home_ungoogled_chromium_Arch]
+SigLevel = Required TrustAll
+Server = https://download.opensuse.org/repositories/home:/ungoogled_chromium/Arch/$arch
+' | tee --append /etc/pacman.conf
+
+# Install ungoogled-chromium
+pacman -Sy ungoogled-chromium
+
+# TODO: Custom user-dirs
+
+# TODO: Install AUR packages to ~/pkg
+# yay lightly-qt

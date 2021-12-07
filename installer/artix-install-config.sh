@@ -4,7 +4,7 @@ ARTIX_ROOT_SIZE_GB="15"
 ARTIX_KEYMAP="de-latin1"
 ARTIX_TIMEZONE="Europe/Berlin"
 ARTIX_VENDOR="intel" # intel, amd
-ARTIX_GFX_VENDOR="intel" # intel, nvidia, amd
+ARTIX_GFX_VENDOR="none" # none, intel, nvidia, amd
 ARTIX_LEGACY=0 # not implemented yet
 ARTIX_BOOTLOADER_ID="pigeon_artix"
 ARTIX_GRUB_COLOR_NORMAL="red/black"
@@ -14,7 +14,7 @@ ARTIX_HOSTNAME="artix"
 ARTIX_USER="felix"
 ARTIX_USER_PASSWORD="1"
 ARTIX_USER_GROUPS="wheel"
-ARTIX_USER_SHELLL="zsh"
+ARTIX_USER_SHELL="zsh"
 ARTIX_ROOT_PASSWORD="1"
 ARTIX_WIRELESS=0
 
