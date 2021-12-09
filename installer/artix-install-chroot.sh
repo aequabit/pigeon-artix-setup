@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 
-source /root/artix-install-config.sh
-
-# Read the passphrase and delete the temporary file
-ARTIX_LUKS_PASSPHRASE=$(cat /luks-passphrase)
-rm -f /luks-passphrase
+# Source the temporary config file and delete it
+# source /.artix-install-config.tmp
+# rm -f /.artix-install-config.tmp
 
 # Update repositories
 pacman -Sy
 
 # Create LUKS keyfile
-#  TODO: Could be done outside of chroot, making /luks-passphrase obsolete
 dd if=/dev/random of=/crypto_keyfile.bin bs=512 count=8 iflag=fullblock
 chmod 000 /crypto_keyfile.bin
 sed -i "s/FILES=(/FILES=(\/crypto_keyfile.bin/g" /etc/mkinitcpio.conf
@@ -90,6 +87,7 @@ echo "${ARTIX_HOSTNAME}" > /etc/hostname
 echo "hostname=\"${ARTIX_HOSTNAME}\"" > /etc/conf.d/hostname
 
 # Configure hostfile
+#  TODO: Single write command
 echo "127.0.0.1 localhost ${ARTIX_HOSTNAME}.localdomain ${ARTIX_HOSTNAME}" >> /etc/hosts
 echo "127.0.1.1 localhost ${ARTIX_HOSTNAME}.localdomain ${ARTIX_HOSTNAME}" >> /etc/hosts
 echo "::1 localhost ${ARTIX_HOSTNAME}.localdomain ${ARTIX_HOSTNAME}" >> /etc/hosts
@@ -100,11 +98,11 @@ if [ "${ARTIX_WIRELESS}" != "0" ]; then
 fi
 
 # Install networkmanager
-pacman -S --noconfirm -q networkmanager networkmanager-openrc networkmanager-openvpn network-manager-applet
+pacman -S --noconfirm -q networkmanager-openrc networkmanager networkmanager-openvpn network-manager-applet
 rc-update add NetworkManager default
 
 # Install additional services
-pacman -S --noconfirm -q ntp ntp-openrc acpid acpid-openrc syslog-ng syslog-ng-openrc
+pacman -S --noconfirm -q ntp-openrc ntp acpid-openrc acpid syslog-ng-openrc syslog-ng
 rc-update add ntpd default
 rc-update add acpid default
 rc-update add syslog-ng default
@@ -157,8 +155,8 @@ elif [ "${ARTIX_GFX_VENDOR}" = "amd" ]; then
     echo "currently no amd gfx support"
 fi
 
-# Install elogind, SDDM and KDE
-pacman -S --noconfirm -q elogind elogind-openrc sddm sddm-openrc plasma plasma-nm ttf-dejavu ttf-liberation
+# Install SDDM and KDE
+pacman -S --noconfirm -q sddm-openrc sddm plasma plasma-nm ttf-dejavu ttf-liberation
 rc-update add elogind
 rc-update add sddm
 
@@ -202,3 +200,8 @@ pacman -Sy ungoogled-chromium
 
 # # Disable NOPASSWD for nobody
 # sed -i "s/nobody ALL=(ALL) NOPASSWD: ALL//g" /etc/sudoers
+
+# https://github.com/LukeSmithxyz/LARBS/blob/master/larbs.sh
+# https://github.com/LukeSmithxyz/voidrice
+
+# TODO: Modularize post-setup into separate files

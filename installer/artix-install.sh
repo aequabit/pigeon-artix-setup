@@ -1,10 +1,28 @@
 #!/usr/bin/env bash
 
+# TODO: _ENABLE flags for major features (LVM, VFIO, swap ...) and options that are ignored if feature is turned off
+# TODO: Make encrypted /boot optional
+# TODO: More configuration (disk labels, volume names ...)
+# TODO: Legacy support
+# TODO: Make LVM optional
+# TODO: Provide option to automatically add ungoogled-chromium pacman repository
+# TODO: Init system selection
+# TODO: Semi-automatic detection of PCIe devices for VFIO passthrough
+# TODO: Allow user to specify additional packages to be installed
+# TODO: Allow user to set partition numbers manually and launch fdisk for manual partitioning
+# TODO: Add prints at most steps, suppress large output (pacman, fdisk etc.) and only display errors
+# TODO: Allow user to choose if /home should be a separate partition/volume
+# TODO: Add support for installing AUR packages (place repositories in /home/$ARTIX_USER_NAME/pkg) 
+# TODO: Split installation process into multiple files, source in optional steps
+ # ? Custom scripts that can be inserted at specific install stages
+# TODO: If any partitions exist on the target disk, force the user to type something in to wipe and provide flag to wipe without confirmation
 # TODO: Presets (desktop, mobile, server?)
-# TODO: KDE application sets (reduced, essential)
+# TODO: KDE, GNOME, XFCE application sets (reduced, essential)
+# TODO: suckless application set
 # TODO: Wizard to generate config
 # TODO: Arch support
 # TODO: Keep hashes of config files, scan before - run guided editor if changed
+# TODO: Parallel pacman downloads
 
 function read_password() {
   stty -echo
@@ -16,7 +34,15 @@ function read_password() {
 
 source ./artix-install-config.sh
 
-read_password "Enter your desired LUKS passphrase: " ARTIX_LUKS_PASSPHRASE
+if [ "${ARTIX_LUKS_PASSPHRASE}" = "prompt" ]; then
+    read_password "Enter your desired LUKS passphrase: " ARTIX_LUKS_PASSPHRASE
+fi
+if [ "${ARTIX_USER_PASSWORD}" = "prompt" ]; then
+    read_password "Enter your desired user password: " ARTIX_USER_PASSWORD
+fi
+if [ "${ARTIX_ROOT_PASSWORD}" = "prompt" ]; then
+    read_password "Enter your desired root password: " ARTIX_ROOT_PASSWORD
+fi
 
 # Don't run if target disk is not attached
 if [ ! -e "${ARTIX_DISK}" ]; then
@@ -24,17 +50,29 @@ if [ ! -e "${ARTIX_DISK}" ]; then
     exit 1
 fi
 
+# Double check if running in VM (TODO: Remove)
+if [ ! -e "/dev/vda" ]; then
+    echo "/dev/vda does not exist, probably not running vm"
+    echo "bye"
+    exit 1
+fi
+
+# Upgrade the system
+pacman -Sy
+
 # Since we want to be as modular as possible,
 # the most permanent partitions will be created first.
 # This layout is preferable: 
 # 
 # lvm (/dev/xxx1)
-#  -> lv-home
+#  -> lv-home (first, so the root volume can be replaced without moving anything around)
 #  -> lv-root
-#  -> (lv-swap)
-# efi (/dev/xxx2)
+#  -> (lv-swap) (TODO: Maybe move up since it doesn't need to be removed when replacing the root volume?
+#                      Would also make disabling it harder, though)
+# efi (/dev/xxx2) (last, since it can be wiped and replaced at any time)
 # 
 
+# TODO: This could be replaced with parted, which is easier to automate. Don't like it's syntax, though.
 (
     echo g # Create GPT
 
@@ -106,13 +144,10 @@ mount /dev/vg0/lv-home /mnt/home
 mkdir /mnt/boot/efi
 mount "${ARTIX_DISK_EFI}" /mnt/boot/efi
 
-# Update pacman repositories
-pacman -Sy
-
 # Bootstrap the base system
 basestrap /mnt base base-devel openrc \
     linux-zen linux-zen-headers linux-firmware \
-    cryptsetup cryptsetup-openrc lvm2 lvm2-openrc \
+    elogind-openrc elogind cryptsetup-openrc cryptsetup lvm2-openrc lvm2 \
     sudo wget curl nano grub os-prober efibootmgr dosfstools freetype2 fuse2 gptfdisk libisoburn mtools os-prober \
     "${ARTIX_USER_SHELL}" "${ARTIX_VENDOR}-ucode"
 
@@ -124,10 +159,13 @@ cp /root/artix-install-config.sh /mnt/root
 cp /root/artix-install-chroot.sh /mnt/root
 
 # Save the LUKS passphrase temporarily for the chroot environment
-printf "${ARTIX_LUKS_PASSPHRASE}" > /mnt/luks-passphrase
+# echo "ARTIX_LUKS_PASSPHRASE=${ARTIX_LUKS_PASSPHRASE@Q}
+# ARTIX_USER_PASSWORD=${ARTIX_USER_PASSWORD@Q}
+# ARTIX_ROOT_PASSWORD=${ARTIX_ROOT_PASSWORD@Q}" > /mnt/.artix-install-config.tmp
 
-# Run the next stage inside the chroot environment
-artix-chroot /mnt /root/artix-install-chroot.sh
+# Run the next stage inside the chroot environment (@Q escapes the string)
+CHROOT_ENV="ARTIX_LUKS_PASSPHRASE=${ARTIX_LUKS_PASSPHRASE@Q};ARTIX_USER_PASSWORD=${ARTIX_USER_PASSWORD@Q};ARTIX_ROOT_PASSWORD=${ARTIX_ROOT_PASSWORD@Q}"
+artix-chroot /mnt /bin/bash -c "source /root/artix-install-config.sh;${CHROOT_ENV};/root/artix-install-chroot.sh"
 
 # artix-chroot /mnt /bin/bash
 
