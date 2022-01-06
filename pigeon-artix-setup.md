@@ -1,3 +1,6 @@
+# Use cases
+- Replacement for Arch desktop distribution (Garuda, Endeavour etc.)
+
 https://wiki.artixlinux.org/Main/Installation
 https://gist.github.com/aequabit/0bca46e233b7ecaed65fbfa01e68dd3e#file-arch-lvm-setup-md
 https://github.com/mikilian/arch-luks-setup
@@ -15,6 +18,55 @@ https://www.youtube.com/watch?v=mIpZA6z-Ctk
 https://github.com/Zaechus/artix-installer
 
 # TODO
+- Store installer in /opt, provide option to run certain steps while in the system (package bundles, applications etc.)
+- Calculate recommended partition sizes (55GB for 512GB drive)
+- Print commands that are run, log to file
+- Sanity checks at every step
+- Don't autoconfirm certain steps (package installations with optional dependencies) to let the user choose  when using the guided installer
+- base directory = SETUP_BASE | XDG_SHARE/pigeon-artix-setup | /usr/share/pigeon-artix-setup
+- Powerline console fonts (aur/powerline-console-fonts-git, rename according to https://superuser.com/a/1532933)
+- Gaming optimization toggle (Wine + Winetricks + Protontricks, Lutris, Esync, Steam)
+- Select kernels
+- Support multiple locales, more precise control (time, monetary etc.)
+- Custom XDG directories
+- Make separate boot partition/volume optional 
+- Source empty default configuration before the user's to ensure variables introduced by a newer version still get set when using old config files
+- Enable password prompting via separate variable
+- Define package groups in advanced section in configuration file
+ - KDE_APPLICATIONS="konsole ..."
+ - Additional packages defined in KDE_APPLICATIONS_CUSTOM so merging is easier
+ - Description for each package whose name isn't obvious
+- KDE global menu + gtk appmenu
+- Proper microcode support (initrd enable?)
+- ext4 SSD trim support (disclaimer: https://forums.freebsd.org/threads/56951/#post-328912:~:text=Ext4%27s%20discard%20feature)
+- Optional rankmirrors support
+- Copy all touched files to .bak
+- Guided config generator (sane defaults or ask all options)
+- _ENABLE flags for major features (LVM, VFIO, swap ...) and options  that are ignored if feature is turned off
+- Group packages, wrap pacman
+- Make encrypted /boot optional, notify user that some features will not work with it (i.e. remembering last GRUB selection)
+- More configuration (disk labels, volume names ...)
+- Legacy support
+- Make LVM optional
+- Provide option to automatically add ungoogled-chromium pacman repository
+- Init system selection
+- Semi-automatic detection of PCIe devices for VFIO passthrough
+- Allow user to specify additional packages to be installed
+- Allow user to set partition numbers manually and launch fdisk for manual partitioning
+- Add prints at most steps, suppress large output (pacman, fdisk etc.) and only display errors
+- Allow user to choose if /home should be a separate partition/volume
+- Add support for installing AUR packages (place repositories in /home/$ARTIX_USER_NAME/pkg) 
+- Split installation process into multiple files, source in optional steps
+ - Custom steps (20-partition, ignore if 20-partition.custom exists, provide 20-partition.custom-example)
+ - ? Custom scripts that can be inserted at specific install stages
+- If any partitions exist on the target disk, force the user to type something in to wipe and provide flag to wipe without confirmation
+- Presets (desktop, mobile, server)
+- KDE, GNOME, XFCE application sets (reduced, essential)
+- suckless application set
+- Wizard to generate config
+- Arch support
+- Keep hashes of config files, scan before - run guided editor if changed
+- Parallel pacman downloads
 - use variables wherever possible
 - extend rn script?
  - list of packages to replace with the -openrc, -s6 etc. variants
@@ -23,7 +75,7 @@ https://github.com/Zaechus/artix-installer
  - backup all files
  - log all actions
  - don't automatically edit configs, launch editor to do so
-  - ! keep hashes of configuration files - only prompt if unknown
+  - ! keep hashes of configuration files - only prompt if unknown (show diff between old original config and update one)
    - ? scan before to know if installation requires interaction
   - prepend small, commented guide on what to change
 
@@ -37,7 +89,7 @@ https://github.com/Zaechus/artix-installer
  - 300MB efi
  - 500MB boot
  - lvm container
-  - 50GB root
+  - 80GB root
   - rest home
 
 ## TODO: https://wiki.artixlinux.org/Main/InstallationWithFullDiskEncryption
@@ -153,5 +205,10 @@ https://github.com/Zaechus/artix-installer
 https://github.com/tcorreabr/Parachute
 https://www.reddit.com/r/kde/comments/me68sm/comment/gsdubkf
 
+## TODO: KDE Latte?
+
+- Kvantum theme?
+- Papirus icons?
+- KRunner in screen center
 - Open KRunner with Meta key:
- - kwriteconfig5 --file kwinrc --group ModifierOnlyShortcuts --key Meta "org.kde.krunner,/App,,display"
+ - kwriteconfig5 --file kwinrc --group ModifierOnlyShortcuts --key Meta "org.kde.krunner,/App,,toggleDisplay"

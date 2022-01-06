@@ -1,30 +1,9 @@
 #!/usr/bin/env bash
 
-# TODO: _ENABLE flags for major features (LVM, VFIO, swap ...) and options that are ignored if feature is turned off
-# TODO: Make encrypted /boot optional
-# TODO: More configuration (disk labels, volume names ...)
-# TODO: Legacy support
-# TODO: Make LVM optional
-# TODO: Provide option to automatically add ungoogled-chromium pacman repository
-# TODO: Init system selection
-# TODO: Semi-automatic detection of PCIe devices for VFIO passthrough
-# TODO: Allow user to specify additional packages to be installed
-# TODO: Allow user to set partition numbers manually and launch fdisk for manual partitioning
-# TODO: Add prints at most steps, suppress large output (pacman, fdisk etc.) and only display errors
-# TODO: Allow user to choose if /home should be a separate partition/volume
-# TODO: Add support for installing AUR packages (place repositories in /home/$ARTIX_USER_NAME/pkg) 
-# TODO: Split installation process into multiple files, source in optional steps
- # ? Custom scripts that can be inserted at specific install stages
-# TODO: If any partitions exist on the target disk, force the user to type something in to wipe and provide flag to wipe without confirmation
-# TODO: Presets (desktop, mobile, server?)
-# TODO: KDE, GNOME, XFCE application sets (reduced, essential)
-# TODO: suckless application set
-# TODO: Wizard to generate config
-# TODO: Arch support
-# TODO: Keep hashes of config files, scan before - run guided editor if changed
-# TODO: Parallel pacman downloads
-
 function read_password() {
+  if [ $1 -eq 0 || $2 -eq 0 ]; then
+    echo "example usage: read_password \"Enter your password: \" OUTPUT_VARIABLE_NAME"
+  fi
   stty -echo
   printf "${1}"
   read "${2}"
@@ -60,11 +39,10 @@ fi
 # Upgrade the system
 pacman -Sy
 
-# Since we want to be as modular as possible,
-# the most permanent partitions will be created first.
+# Since we want to be as modular as possible, the most permanent partitions will be created first.
 # This layout is preferable: 
-# 
-# lvm (/dev/xxx1)
+#
+# lvm (/dev/xxx1) (first, so changing bootloader, resizing to add partitions etc. is easier)
 #  -> lv-home (first, so the root volume can be replaced without moving anything around)
 #  -> lv-root
 #  -> (lv-swap) (TODO: Maybe move up since it doesn't need to be removed when replacing the root volume?
@@ -108,7 +86,7 @@ echo -n "${ARTIX_LUKS_PASSPHRASE}" | cryptsetup luksOpen "${ARTIX_DISK_LVM}" lvm
 
 # Create LVM container and volume group 
 pvcreate /dev/mapper/lvm
-vgcreate vg0 /dev/mapper/lvm
+vgcreate vg /dev/mapper/lvm
 
 # Calculate logical volume sizes
 PV_CAPACITY_BYTES=$(pvdisplay /dev/mapper/lvm -s --units B | tr -d -c 0-9)
@@ -117,28 +95,28 @@ LV_SWAP_SIZE_BYTES=$(echo "$ARTIX_SWAP_SIZE_GB * 1024 * 1024 * 1024" | bc)
 LV_HOME_SIZE_BYTES=$(echo "$PV_CAPACITY_BYTES - $LV_ROOT_SIZE_BYTES - $LV_SWAP_SIZE_BYTES" | bc);
 
 # Create logical volumes
-lvcreate --name lv-home --size "${LV_HOME_SIZE_BYTES}B" vg0
-lvcreate --name lv-root --size "${LV_ROOT_SIZE_BYTES}B" vg0
+lvcreate --name lv-home --size "${LV_HOME_SIZE_BYTES}B" vg
+lvcreate --name lv-root --size "${LV_ROOT_SIZE_BYTES}B" vg
 
 # Create and format swap if enabled
 if [ "${ARTIX_SWAP_SIZE_GB}" != "0" ]; then
-    lvcreate --name lv-swap --size "${LV_SWAP_SIZE_BYTES}B" vg0
-    mkswap -L pt-swap /dev/vg0/lv-swap
-    swapon /dev/vg0/lv-swap
+    lvcreate --name lv-swap --size "${LV_SWAP_SIZE_BYTES}B" vg
+    mkswap -L pt-swap /dev/vg/lv-swap
+    swapon /dev/vg/lv-swap
 fi
 
 # Format logical volumes
-mkfs.ext4 -L pt-root /dev/vg0/lv-root
-mkfs.ext4 -L pt-home /dev/vg0/lv-home
+mkfs.ext4 -L pt-root /dev/vg/lv-root
+mkfs.ext4 -L pt-home /dev/vg/lv-home
 
 # Mount root volume
-mount /dev/vg0/lv-root /mnt
+mount /dev/vg/lv-root /mnt
 
 # Create boot and home directories
 mkdir /mnt/boot /mnt/home
 
 # Mount home partition
-mount /dev/vg0/lv-home /mnt/home
+mount /dev/vg/lv-home /mnt/home
 
 # Mount EFI partition
 mkdir /mnt/boot/efi
@@ -148,8 +126,8 @@ mount "${ARTIX_DISK_EFI}" /mnt/boot/efi
 basestrap /mnt base base-devel openrc \
     linux-zen linux-zen-headers linux-firmware \
     elogind-openrc elogind cryptsetup-openrc cryptsetup lvm2-openrc lvm2 \
-    sudo wget curl nano grub os-prober efibootmgr dosfstools freetype2 fuse2 gptfdisk libisoburn mtools os-prober \
-    "${ARTIX_USER_SHELL}" "${ARTIX_VENDOR}-ucode"
+    sudo wget curl nano ntfs-3g grub os-prober efibootmgr dosfstools freetype2 fuse2 gptfdisk libisoburn mtools os-prober \
+    "${ARTIX_USER_SHELL}" "${ARTIX_ROOT_SHELL}" "${ARTIX_VENDOR}-ucode"
 
 # Create fstab
 fstabgen -U /mnt >> /mnt/etc/fstab

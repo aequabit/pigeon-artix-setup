@@ -28,9 +28,9 @@ LVM_PARTITION_UUID=$(blkid -s UUID -o value "${ARTIX_DISK_LVM}")
 # Set kernel commandline
 #  TODO: Optimize swap-specific options
 if [ "${ARTIX_SWAP_SIZE_GB}" != "0" ]; then
-    sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${LVM_PARTITION_UUID}:vg0 root=\/dev\/vg0\/lv-root resume=\/dev\/vg0\/lv-swap\"/g" /etc/default/grub
+    sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${LVM_PARTITION_UUID}:vg root=\/dev\/vg\/lv-root resume=\/dev\/vg\/lv-swap\"/g" /etc/default/grub
 else
-    sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${LVM_PARTITION_UUID}:vg0 root=\/dev\/vg0\/lv-root\"/g" /etc/default/grub
+    sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=${LVM_PARTITION_UUID}:vg root=\/dev\/vg\/lv-root\"/g" /etc/default/grub
 fi
 
 # Enable LVM support for GRUB
@@ -70,6 +70,12 @@ echo -e "${ARTIX_ROOT_PASSWORD}\n${ARTIX_ROOT_PASSWORD}" | passwd root
 useradd -m -G "${ARTIX_USER_GROUPS}" -s "/bin/${ARTIX_USER_SHELL}" "${ARTIX_USER}"
 echo -e "${ARTIX_USER_PASSWORD}\n${ARTIX_USER_PASSWORD}" | passwd "${ARTIX_USER}"
 
+# Create custom XDG directories
+source "/home/${ARTIX_USER}/.config/user-dirs.dirs"
+mkdir -p "${XDG_DESKTOP_DIR}" "${XDG_DOWNLOAD_DIR}" "${XDG_TEMPLATES_DIR}" \
+         "${XDG_PUBLICSHARE_DIR}" "${XDG_DOCUMENTS_DIR}" "${XDG_MUSIC_DIR}" \
+         "${XDG_PICTURES_DIR}" "${XDG_VIDEOS_DIR}"
+
 # Set keymap
 echo "keymap=${ARTIX_KEYMAP}" > /etc/conf.d/keymaps
 echo "KEYMAP=${ARTIX_KEYMAP}" > /etc/vconsole.conf
@@ -97,8 +103,23 @@ if [ "${ARTIX_WIRELESS}" != "0" ]; then
     pacman -S --noconfirm -q wpa_supplicant dialog wireless_tools
 fi
 
+# Install iptables
+# TODO: Seems to break, download rc files manually?
+# https://gitea.artixlinux.org/artixlinux/packages-openrc/raw/branch/master/iptables-openrc
+pacman -S --noconfirm -q iptables-openrc iptables
+rc-update add iptables default
+
+# Install ebtables and firewalld (for libvirt, might be unnecessary)
+# NOTE: ebtables scripts are included in the iptables-openrc package above
+# pacman -S --noconfirm -q ebtables firewalld-openrc firewalld
+
+# TODO: aur/ebtables aur/ebtables
+
+# firewalld still expects nftables as the firewall backend by default, we probably don't want that
+sed -i "s/FirewallBackend=nftables/FirewallBackend=iptables/g" /etc/firewalld/firewalld.conf
+
 # Install networkmanager
-pacman -S --noconfirm -q networkmanager-openrc networkmanager networkmanager-openvpn network-manager-applet
+pacman -S --noconfirm -q networkmanager-openrc networkmanager network-manager-applet
 rc-update add NetworkManager default
 
 # Install additional services
@@ -141,6 +162,9 @@ sed -i "s/## Worldwide/Server = http:\/\/ftp.halifax.rwth-aachen.de\/archlinux\/
 # Update repositories
 pacman -Sy
 
+# Install systemd compatibility
+pacman -S --noconfirm -q lib32-artix-archlinux-support
+
 # Install necessary X packages
 pacman -S --noconfirm -q xorg-server xorg-apps xorg-xinit
 
@@ -148,44 +172,73 @@ pacman -S --noconfirm -q xorg-server xorg-apps xorg-xinit
 if [ "${ARTIX_GFX_VENDOR}" = "intel" ]; then
     pacman -S --noconfirm -q xf86-video-intel lib32-mesa lib32-libgl
 elif [ "${ARTIX_GFX_VENDOR}" = "nvidia" ]; then
-    pacman -S --noconfirm -q nvidia-utils-openrc nvidia-utils nvidia-dkms \
-        lib32-nvidia-utils lib32-nvidia-libgl nvidia-settings
+    pacman -S --noconfirm -q nvidia-utils-openrc nvidia-dkms \
+        nvidia-utils lib32-nvidia-utils lib32-nvidia-libgl \
+        mesa-utils lib32-mesa-utils mesa-vdpau lib32-mesa-vdpau \
+        nvidia-settings
+
+    echo 'ACTION=="add", DEVPATH=="/bus/pci/drivers/nvidia", RUN+="/usr/bin/nvidia-modprobe -c0 -u"' > /etc/udev/rules.d/70-nvidia.rules
 elif [ "${ARTIX_GFX_VENDOR}" = "amd" ]; then
     # TODO: AMD graphics packages
     echo "currently no amd gfx support"
 fi
 
 # Install SDDM and KDE
-pacman -S --noconfirm -q sddm-openrc sddm plasma plasma-nm ttf-dejavu ttf-liberation
+pacman -S --noconfirm -q sddm-openrc sddm sddm-kcm plasma plasma-nm ttf-dejavu ttf-liberation
 rc-update add elogind
 rc-update add sddm
 
-# Install KDE applications
+# # Set SDDM keymap
+# echo "setxkbmap ${ARTIX_KEYMAP}" > /usr/share/sddm/scripts/Xsetup
+
+# # Fix SDDM for NVIDIA
+# if [ "${ARTIX_GFX_VENDOR}" = "nvidia" ]; then
+#   echo "xrandr --setprovideroutputsource modesetting NVIDIA-0" > /usr/share/sddm/scripts/Xsetup
+#   echo "xrandr --auto" > /usr/share/sddm/scripts/Xsetup
+# fi
+
+# KDE application packages
 # pacman -S --noconfirm -q akonadi-calendar-tools akonadi-import-wizard akonadiconsole \
-#     akregator ark dolphin dolphin-plugins ffmpegthumbs filelight kalarm kcalc \
+#     akregator ark dolphin dolphin-plugins ffmpegthumbs filelight gimp kalarm kcalc \
 #     kcharselect kcolorchooser kcron kde-dev-utils kdenlive kdepim-addons kdf \
 #     kdialog kfind kgpg kleopatra kmail kmail-account-wizard kmix kompare konsole \
 #     kontact konversation kopete korganizer krdc ksystemlog ktouch kwalletmanager \
-#     kwrite markdownpart partitionmanager svgpart sweeper umbrello
+#     kwallet ksshaskpass kwrite markdownpart partitionmanager svgpart sweeper umbrello
+
+# Quality of life packages
+# pacman -S --noconfirm -q pulseaudio-equalizer-ladspa okular p7zip net-tools
+
+# Virtualization packages
+# pacman -S --noconfirm -q libvirt-openrc libvirt dnsmasq-openrc dnsmasq virt-manager edk2-ovmf
+# rc-update add libvirtd
 
 # Additional applications
-# pacman -S --noconfirm -q code discord teamspeak3 telegram-desktop \
-#     qbittorrent obs-studio qemu libvirt virt-manager gnome-clocks
+# pacman -S --noconfirm -q qemu libvirt-openrc libvirt virt-manager wine-staging \
+#     baobab gnome-clocks xfce4-taskmanager qbittorrent
+
+# OpenVPN
+# pacman -S --noconfirm -q networkmanager-openvpn openvpn-openrc openvpn
+
+# Custom applications
+# pacman -S --noconfirm -q discord teamspeak3 telegram-desktop obs-studio
 
 # Add ungoogled-chromium repository (https://github.com/ungoogled-software/ungoogled-chromium-archlinux)
-curl -s 'https://download.opensuse.org/repositories/home:/ungoogled_chromium/Arch/x86_64/home_ungoogled_chromium_Arch.key' | sudo pacman-key -a -
+curl -s 'https://download.opensuse.org/repositories/home:/ungoogled_chromium/Arch/x86_64/home_ungoogled_chromium_Arch.key' | pacman-key -a -
 echo '[home_ungoogled_chromium_Arch]
 SigLevel = Required TrustAll
 Server = https://download.opensuse.org/repositories/home:/ungoogled_chromium/Arch/$arch
 ' | tee --append /etc/pacman.conf
 
 # Install ungoogled-chromium
-pacman -Sy ungoogled-chromium
+pacman -Sy --noconfirm -q ungoogled-chromium
 
 # TODO: Custom user-dirs
 
+# Fix KDE opening image URLs in the image viewer
+xdg-settings set default-url-scheme-handler http
+
 # TODO: Install AUR packages to ~/pkg
-#  yay lightly-qt
+#  yay ebtables qview lightly-qt ttf-meslo-nerd-font-powerlevel10k zsh-theme-powerlevel10k-git visual-studio-code-bin
 
 # # Enable NOPASSWD for nobody
 # printf 'nobody ALL=(ALL) NOPASSWD: ALL\n' | tee -a /etc/sudoers
@@ -200,6 +253,18 @@ pacman -Sy ungoogled-chromium
 
 # # Disable NOPASSWD for nobody
 # sed -i "s/nobody ALL=(ALL) NOPASSWD: ALL//g" /etc/sudoers
+
+# TODO: do aur installs with doas
+
+# Setup doas as a more lightweight replacement for sudo
+# pacman -S --noconfirm -y doas
+# echo -e "permit :wheel\npermit persist ${ARTIX_USER} as root\n" > /etc/doas.conf
+# pacman -R --noconfirm -y sudo
+# ln -s /usr/bin/doas /usr/bin/sudo
+
+# Change maximum number of files a process can open (needed for Esync)
+# TODO: Insert before EOF comment
+# echo '${ARTIX_USER} hard nofile 524288' > /etc/security/limits.conf
 
 # https://github.com/LukeSmithxyz/LARBS/blob/master/larbs.sh
 # https://github.com/LukeSmithxyz/voidrice
