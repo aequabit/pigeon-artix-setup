@@ -20,7 +20,8 @@ echo -n "${ARTIX_LUKS_PASSPHRASE}" | cryptsetup luksAddKey "${ARTIX_DISK_LVM}" /
 pacman -Rc --noconfirm artix-grub-theme
 
 # Enable initramfs hooks
-sed -i "s/block filesystems/block keyboard keymap encrypt lvm2 resume filesystems/g" /etc/mkinitcpio.conf
+# TODO: Add resume option only if swap is enabled and at least the size of ram
+sed -i "s/block filesystems/block keyboard keymap encrypt lvm2 filesystems/g" /etc/mkinitcpio.conf
 mkinitcpio -P
 
 LVM_PARTITION_UUID=$(blkid -s UUID -o value "${ARTIX_DISK_LVM}")
@@ -134,6 +135,10 @@ echo "blacklist pcspkr" > /etc/modprobe.d/nobeep.conf
 # Enable pacman colors
 sed -i "s/#Color/Color/g" /etc/pacman.conf
 
+# Enable parallel pacman downloads
+# TODO: optional
+sed -i "s/#ParallelDownloads = 5/ParallelDownloads = ${ARTIX_PACMAN_PARALLEL_DOWNLOADS}/g" /etc/pacman.conf
+
 # Install support for Arch packages
 pacman -S --noconfirm -q artix-archlinux-support
 
@@ -222,6 +227,10 @@ rc-update add sddm
 # Custom applications
 # pacman -S --noconfirm -q discord teamspeak3 telegram-desktop obs-studio
 
+# Enable kwallet-pam (for kwallet unlock on login)
+# sed -i "s/-auth   optional  pam_kwallet5.so/auth   optional  pam_kwallet5.so/g" /etc/pam.d/sddm
+# sed -i "s/-session  optional  pam_kwallet5.so/session  optional  pam_kwallet5.so/g" /etc/pam.d/sddm
+
 # Add ungoogled-chromium repository (https://github.com/ungoogled-software/ungoogled-chromium-archlinux)
 curl -s 'https://download.opensuse.org/repositories/home:/ungoogled_chromium/Arch/x86_64/home_ungoogled_chromium_Arch.key' | pacman-key -a -
 echo '[home_ungoogled_chromium_Arch]
@@ -256,6 +265,10 @@ xdg-settings set default-url-scheme-handler http
 
 # TODO: do aur installs with doas
 
+# TODO: Install KDE Lightly Theme + Aritim Dark
+# FIX: https://github.com/Luwx/Lightly/issues/93#issuecomment-813330541
+# https://github.com/Luwx/Lightly/blob/master/kstyle/lightly.kcfg#L213
+
 # Setup doas as a more lightweight replacement for sudo
 # pacman -S --noconfirm -y doas
 # echo -e "permit :wheel\npermit persist ${ARTIX_USER} as root\n" > /etc/doas.conf
@@ -270,3 +283,8 @@ xdg-settings set default-url-scheme-handler http
 # https://github.com/LukeSmithxyz/voidrice
 
 # TODO: Modularize post-setup into separate files
+
+# Install docker
+# pacman -S --noconfirm -y docker-openrc docker docker-compose
+# rc-update add docker default
+# usermod -G docker -a "${ARTIX_USER}"

@@ -18,6 +18,9 @@ https://www.youtube.com/watch?v=mIpZA6z-Ctk
 https://github.com/Zaechus/artix-installer
 
 # TODO
+- Save applied stept + uninstall step for the currently installed version
+ - When updating, remove the old version, install the new one and re-apply the configuration
+- ssh-agent setup (https://forum.kde.org/viewtopic.php?f=309&t=153769#p410800)
 - Store installer in /opt, provide option to run certain steps while in the system (package bundles, applications etc.)
 - Calculate recommended partition sizes (55GB for 512GB drive)
 - Print commands that are run, log to file

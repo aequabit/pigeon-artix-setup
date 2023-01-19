@@ -1,6 +1,6 @@
 ARTIX_DISK="/dev/vda"
-ARTIX_SWAP_SIZE_GB="0" # 
-ARTIX_ROOT_SIZE_GB="15" # 55 for 512GB drive
+ARTIX_SWAP_SIZE_GB="0" #
+ARTIX_ROOT_SIZE_GB="15" # 60 for 512GB drive
 ARTIX_KEYMAP="de-latin1"
 ARTIX_TIMEZONE="Europe/Berlin"
 ARTIX_VENDOR="intel" # intel, amd
@@ -14,6 +14,8 @@ ARTIX_GRUB_COLOR_HIGHLIGHT="light-gray/red"
 ARTIX_INITCPIO_MODULES="ext4"
 ARTIX_INITCPIO_MODULES_VFIO="vfio_pci vfio vfio_iommu_type1 vfio_virqfd"
 ARTIX_INITCPIO_MODULES_NVIDIA="nvidia nvidia_modeset nvidia_uvm nvidia_drm"
+
+ARTIX_PACMAN_PARALLEL_DOWNLOADS=8
 
 ARTIX_HOSTNAME="pigeon-artix"
 ARTIX_USER="pigeon"
